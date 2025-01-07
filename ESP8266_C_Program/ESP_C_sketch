@@ -1,0 +1,82 @@
+#include <ESP8266WiFi.h> // Use <WiFi.h> for ESP32
+#include <ESP8266WebServer.h> // Use <WebServer.h> for ESP32
+
+ESP8266WebServer server(80); // Web server on port 80
+const int relays[] = {D6, D1, D2, D3}; // GPIO pins for relays
+
+// Function to initialize relay pins
+void initializeRelays() {
+  for (int i = 0; i < 4; i++) {
+    pinMode(relays[i], OUTPUT);
+    digitalWrite(relays[i], LOW); // Turn all relays off initially
+  }
+}
+
+// Function to blink the built-in LED
+void blinkLED() {
+  digitalWrite(LED_BUILTIN, LOW); // Turn LED on (active low)
+  delay(100); // Wait for 100 ms
+  digitalWrite(LED_BUILTIN, HIGH); // Turn LED off
+}
+
+// Function to handle relay control
+void handleRelay(int relayIndex, bool state) {
+  digitalWrite(relays[relayIndex], state ? HIGH : LOW);
+  String message = "Relay " + String(relayIndex + 1) + (state ? " ON" : " OFF");
+  server.send(200, "text/plain", message);
+  blinkLED(); // Blink the LED when a command is received
+}
+
+// Function to return the status of all relays
+void handleStatus() {
+  String status = "{";
+  for (int i = 0; i < 4; i++) {
+    status += "\"relay" + String(i + 1) + "\":" + String(digitalRead(relays[i]));
+    if (i < 3) status += ",";
+  }
+  status += "}";
+  server.send(200, "application/json", status);
+  blinkLED(); // Blink the LED when the status is requested
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize relays
+  initializeRelays();
+
+  // Initialize the built-in LED
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // Ensure LED is off initially (active low)
+
+  // Start Wi-Fi Access Point
+  WiFi.softAP("ESP-Relay-Control", "12345678"); // Secure password
+  Serial.println("Access Point Started");
+
+  // Print the IP Address of the ESP8266
+  IPAddress ip = WiFi.softAPIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  // Define routes for relay control dynamically
+  for (int i = 0; i < 4; i++) {
+    server.on("/relay" + String(i + 1) + "/on", [i]() { handleRelay(i, true); });
+    server.on("/relay" + String(i + 1) + "/off", [i]() { handleRelay(i, false); });
+  }
+
+  // Route for getting the status of all relays
+  server.on("/status", handleStatus);
+
+  // Handle invalid routes
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "Route Not Found");
+    blinkLED(); // Blink the LED when an invalid route is accessed
+  });
+
+  server.begin();
+  Serial.println("Web Server Started");
+}
+
+void loop() {
+  server.handleClient();
+}
